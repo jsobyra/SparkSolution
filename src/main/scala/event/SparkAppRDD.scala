@@ -1,5 +1,7 @@
 package event
 
+import java.sql.DriverManager
+
 import org.apache.commons.net.util.SubnetUtils
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.{SparkConf, SparkContext}
@@ -34,6 +36,7 @@ object SparkAppRDD {
       .reduceByKey((acc, n) => acc + n)
       .sortBy(x => -x._2)
       .map(x => event.TopFrequentlyPurchasedCategory(x._1, x._2))
+      .take(10)
 
 
     val purchasedProductPerCategory = randomEvents
@@ -63,26 +66,37 @@ object SparkAppRDD {
     prop.setProperty("driver", "com.mysql.jdbc.Driver")
     prop.setProperty("user", "root")
     prop.setProperty("password", "cloudera")
-    val url = "jdbc:mysql://localhost:3306/results"
+
     val table1 = "result1"
     val table2 = "result2"
     val table3 = "result3"
 
-    purchasedCategories.register
-      .withColumnRenamed("category", "product_category")
-      .withColumnRenamed("frequency", "frequence")
-      .write.option("driver", "com.mysql.jdbc.Driver").mode("append").jdbc(url, table1, prop)
+    sc.parallelize(purchasedCategories).foreachPartition { rddpartition =>
+      val url = "jdbc:mysql://localhost:3306/results"
+      val conn = DriverManager.getConnection(url)
+      rddpartition.foreach { record =>
+        conn.createStatement().execute("INSERT INTO " + table1 + "VALUES (" + record.category + "," + record.frequency + ")")
+      }
+      conn.commit()
+    }
 
-    purchasedProductPerCategory.toDF()
-      .withColumnRenamed("category", "product_category")
-      .withColumnRenamed("product", "product_name")
-      .withColumnRenamed("frequency", "frequence")
-      .write.option("driver", "com.mysql.jdbc.Driver").mode("append").jdbc(url, table2, prop)
+    sc.parallelize(purchasedProductPerCategory).foreachPartition { rddpartition =>
+      val url = "jdbc:mysql://localhost:3306/results"
+      val conn = DriverManager.getConnection(url)
+      rddpartition.foreach { record =>
+        conn.createStatement().execute("INSERT INTO " + table2 + "VALUES (" + record.category + "," + record.product + "," + record.frequency + ")")
+      }
+      conn.commit()
+    }
 
-    spendingCountries.toDF()
-      .withColumnRenamed("spending", "sum")
-      .withColumnRenamed("country", "country_iso_code")
-      .write.option("driver", "com.mysql.jdbc.Driver").mode("append").jdbc(url, table3, prop)*/
+    sc.parallelize(spendingCountries).foreachPartition { rddpartition =>
+      val url = "jdbc:mysql://localhost:3306/results"
+      val conn = DriverManager.getConnection(url)
+      rddpartition.foreach { record =>
+        conn.createStatement().execute("INSERT INTO " + table3 + "VALUES (" + record.country + "," + record.spending + ")")
+      }
+      conn.commit()
+    }
 
   }
 
